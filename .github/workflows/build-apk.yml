@@ -1,0 +1,69 @@
+name: Gerar APK da METS IA
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "METS_IA_APK_Celular.zip"
+      - ".github/workflows/build-apk.yml"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Baixar projeto
+        uses: actions/checkout@v4
+
+      - name: Preparar Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Extrair projeto METS
+        run: |
+          mkdir -p mets-src
+          unzip -q METS_IA_APK_Celular.zip -d mets-src
+
+      - name: Encontrar projeto Android
+        run: |
+          SETTINGS=$(find mets-src -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: projeto Android não encontrado."
+            find mets-src -maxdepth 4 -type f | head -100
+            exit 1
+          fi
+
+          ROOT=$(dirname "$SETTINGS")
+          echo "ANDROID_ROOT=$ROOT" >> "$GITHUB_ENV"
+          echo "Projeto encontrado em: $ROOT"
+
+      - name: Preparar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Compilar APK
+        working-directory: ${{ env.ANDROID_ROOT }}
+        run: |
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --no-daemon
+          else
+            gradle assembleDebug --no-daemon
+          fi
+
+      - name: Localizar APK
+        run: |
+          echo "APKs encontrados:"
+          find "$ANDROID_ROOT" -type f -name "*.apk" -print
+
+      - name: Disponibilizar APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: METS-IA-APK
+          path: |
+            ${{ env.ANDROID_ROOT }}/**/build/outputs/apk/**/*.apk
+          if-no-files-found: error
